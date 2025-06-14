@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>برا السالفة - لعبة الحيوانات</title>
+<style>
+  body { font-family: Arial, sans-serif; direction: rtl; padding: 20px; background: #f7f7f7; }
+  h1 { text-align: center; }
+  #startBtn { display: block; margin: 20px auto; padding: 15px 30px; font-size: 24px; background: #d32f2f; color: white; border: none; border-radius: 8px; cursor: pointer; }
+  #playersList, #gameArea { max-width: 500px; margin: 20px auto; background: white; padding: 20px; border-radius: 10px; }
+  input, button, select { font-size: 18px; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
+  button { cursor: pointer; }
+  .player-item { padding: 5px 0; border-bottom: 1px solid #eee; }
+  #animalName { font-size: 30px; text-align: center; margin: 15px 0; font-weight: bold; }
+  #voteSection div { margin: 10px 0; }
+</style>
+</head>
+<body>
+
+<h1>لعبة برا السالفة - الحيوانات</h1>
+
+<div id="playersList">
+  <h2>إضافة لاعبين</h2>
+  <input type="text" id="playerNameInput" placeholder="اسم اللاعب" />
+  <button onclick="addPlayer()">أضف لاعب</button>
+  <div id="playersContainer"></div>
+  <button id="startBtn" onclick="startGame()" disabled>ابدأ اللعبة</button>
+</div>
+
+<div id="gameArea" style="display:none;">
+  <div id="roleInfo" style="font-size:24px; text-align:center; margin-bottom:20px;"></div>
+  <div id="animalName"></div>
+  <button onclick="askRandom()" style="margin-bottom:10px;">اسأل</button>
+  <button onclick="startVoting()">تصويت</button>
+
+  <div id="voteSection" style="display:none;"></div>
+
+  <div id="guessSection" style="display:none; margin-top:20px;">
+    <h3>خمن الحيوان الصحيح</h3>
+    <select id="guessAnimalSelect"></select>
+    <button onclick="makeGuess()">خمن</button>
+    <div id="guessResult" style="margin-top:15px; font-weight:bold;"></div>
+  </div>
+</div>
+
+<script>
+  let players = [];
+  let animalList = [
+    "أسد", "نمر", "فيل", "زرافة", "دب", "ثعلب", "ذئب", "سلحفاة", "تمساح", "غوريلا",
+    "بطريق", "كنغر", "حصان", "زنبور", "صقر", "بطة", "سمكة القرش", "ثعبان", "طاووس", "فهد",
+    "غزال", "تمساح", "كوالا", "نعامة", "حمامة", "نملة", "ضفدع", "ضبع", "كنغر", "ببغاء"
+  ];
+  let secretAnimal = "";
+  let liarIndex = -1;
+  let votes = {};
+  let votingInProgress = false;
+
+  function addPlayer() {
+    const input = document.getElementById("playerNameInput");
+    let name = input.value.trim();
+    if (name === "") {
+      alert("اكتب اسم اللاعب");
+      return;
+    }
+    if (players.find(p => p.name === name)) {
+      alert("الاسم موجود بالفعل");
+      return;
+    }
+    players.push({name: name, role: ""});
+    input.value = "";
+    renderPlayers();
+    checkStartReady();
+  }
+
+  function removePlayer(index) {
+    players.splice(index, 1);
+    renderPlayers();
+    checkStartReady();
+  }
+
+  function renderPlayers() {
+    const container = document.getElementById("playersContainer");
+    container.innerHTML = "";
+    players.forEach((p, i) => {
+      const div = document.createElement("div");
+      div.className = "player-item";
+      div.textContent = p.name + " ";
+      const btn = document.createElement("button");
+      btn.textContent = "احذف";
+      btn.style.marginLeft = "10px";
+      btn.onclick = () => removePlayer(i);
+      div.appendChild(btn);
+      container.appendChild(div);
+    });
+  }
+
+  function checkStartReady() {
+    document.getElementById("startBtn").disabled = players.length < 3;
+  }
+
+  function startGame() {
+    if (players.length < 3) {
+      alert("يجب أن يكون عدد اللاعبين 3 على الأقل");
+      return;
+    }
+    // اختيار لاعب عشوائي "برا السالفة"
+    liarIndex = Math.floor(Math.random() * players.length);
+    secretAnimal = animalList[Math.floor(Math.random() * animalList.length)];
+
+    players.forEach((p, i) => {
+      p.role = (i === liarIndex) ? "برا السالفة" : "جوا السالفة";
+    });
+
+    document.getElementById("playersList").style.display = "none";
+    document.getElementById("gameArea").style.display = "block";
+
+    showPlayerRole(0);
+  }
+
+  // وظيفة لعرض دور اللاعب حسب رقمه
+  let currentPlayerIndex = 0;
+  function showPlayerRole(index) {
+    if (index >= players.length) {
+      currentPlayerIndex = 0;
+    } else {
+      currentPlayerIndex = index;
+    }
+    const roleInfo = document.getElementById("roleInfo");
+    roleInfo.textContent = `دور اللاعب: ${players[currentPlayerIndex].name} — ${players[currentPlayerIndex].role}`;
+
+    if (players[currentPlayerIndex].role === "برا السالفة") {
+      document.getElementById("animalName").textContent = "🐾 ??? الحيوان غير معروف لك";
+    } else {
+      document.getElementById("animalName").textContent = `🐾 الحيوان هو: ${secretAnimal}`;
+    }
+  }
+
+  // زر اسأل عشوائي: رقم يسأل رقم
+  function askRandom() {
+    if (players.length < 2) return alert("لا يوجد لاعبين كفاية للسؤال");
+
+    let askerIndex = currentPlayerIndex;
+    let possibleTargets = players.map((p, i) => i).filter(i => i !== askerIndex);
+    let targetIndex = possibleTargets[Math.floor(Math.random() * possibleTargets.length)];
+
+    alert(`${players[askerIndex].name} يسأل ${players[targetIndex].name}`);
+    // هنا ممكن تضيف منطق الاسئلة أو أي شيء إضافي
+  }
+
+  // بداية التصويت
+  function startVoting() {
+    if (votingInProgress) return alert("التصويت جاري بالفعل");
+
+    votingInProgress = true;
+    votes = {};
+    document.getElementById("voteSection").style.display = "block";
+    document.getElementById("voteSection").innerHTML = "<h3>التصويت: اختر لاعب للتصويت عليه</h3>";
+
+    players.forEach((p, i) => {
+      const voteDiv = document.createElement("div");
+      voteDiv.textContent = `اللاعب ${p.name} يصوت: `;
+      const select = document.createElement("select");
+      players.forEach((pl, j) => {
+        if (i !== j) {
+          const option = document.createElement("option");
+          option.value = j;
+          option.textContent = pl.name;
+          select.appendChild(option);
+        }
+      });
+      voteDiv.appendChild(select);
+
+      // حفظ التصويت عند التغيير
+      select.onchange = () => {
+        votes[p.name] = select.value;
+      };
+      // اختيار افتراضي
+      votes[p.name] = select.value;
+      document.getElementById("voteSection").appendChild(voteDiv);
+    });
+
+    const finishBtn = document.createElement("button");
+    finishBtn.textContent = "إنهاء التصويت";
+    finishBtn.onclick = finishVoting;
+    document.getElementById("voteSection").appendChild(finishBtn);
+  }
+
+  // إنهاء التصويت وإظهار النتيجة
+  function finishVoting() {
+    votingInProgress = false;
+    document.getElementById("voteSection").style.display = "none";
+
+    // حساب الأصوات
+    const tally = {};
+    for (const voter in votes) {
+      const votedIndex = votes[voter];
+      if (tally[votedIndex]) tally[votedIndex]++;
+      else tally[votedIndex] = 1;
+    }
+
+    // معرفة اللاعب الذي حصل على أعلى أصوات
+    let maxVotes = 0;
+    let votedOutIndex = null;
+    for (const index in tally) {
+      if (tally[index] > maxVotes) {
+        maxVotes = tally[index];
+        votedOutIndex = index;
+      }
+    }
+
+    alert(`تم التصويت! اللاعب خارج اللعبة هو: ${players[votedOutIndex].name}`);
+
+    // إظهار خيارات التخمين
+    showGuessSection();
+  }
+
+  // عرض قائمة 10 حيوانات لتخمينها مع الحيوان الصحيح
+  function showGuessSection() {
+    const guessSection = document.getElementById("guessSection");
+    guessSection.style.display = "block";
+    const select = document.getElementById("guessAnimalSelect");
+
+    // اختار 9 حيوانات عشوائية + الحيوان الصحيح
+    let choices = new Set();
+    choices.add(secretAnimal);
+    while (choices.size < 10) {
+      const randomAnimal = animalList[Math.floor(Math.random() * animalList.length)];
+      choices.add(randomAnimal);
+    }
+
+    // افرز الخيارات عشوائياً
+    let choicesArray = Array.from(choices);
+    for (let i = choicesArray.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [choicesArray[i], choicesArray[j]] = [choicesArray[j], choicesArray[i]];
+    }
+
+    select.innerHTML = "";
+    choicesArray.forEach(animal => {
+      const opt = document.createElement("option");
+      opt.value = animal;
+      opt.textContent = animal;
+      select.appendChild(opt);
+    });
+  }
+
+  // تخمين اللاعب
+  function makeGuess() {
+    const guess = document.getElementById("guessAnimalSelect").value;
+    const result = document.getElementById("guessResult");
+    if (guess === secretAnimal) {
+      result.textContent = "🎉 صح! لقد خمنت الحيوان الصحيح!";
+    } else {
+      result.textContent = `❌ خطأ! الحيوان الصحيح كان: ${secretAnimal}`;
+    }
+  }
+</script>
+
+</body>
+</html>

@@ -1,9 +1,190 @@
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "SENDER_ID",
-  appId: "APP_ID"
-};
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>برا السالفة - الحيوانات</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: Arial; direction: rtl; background: #f7f7f7; padding: 20px; }
+    h1 { text-align: center; }
+    #startBtn { display: block; margin: 20px auto; padding: 15px 30px; font-size: 24px; background: #d32f2f; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    #playersList, #gameArea { max-width: 500px; margin: 20px auto; background: white; padding: 20px; border-radius: 10px; }
+    button { font-size: 18px; margin: 10px 0; padding: 10px; width: 100%; border-radius: 8px; cursor: pointer; }
+    #animalName { font-size: 30px; text-align: center; margin: 15px 0; font-weight: bold; }
+    .btn { background: #1976d2; color: white; }
+    .red { background: #d32f2f; }
+  </style>
+</head>
+<body>
+
+<h1>لعبة برا السالفة 🐾</h1>
+<div id="playerCount">المتصلين: 0</div>
+
+<div id="playersList">
+  <h2>إضافة لاعبين (للمضيف فقط)</h2>
+  <input type="text" id="playerNameInput" placeholder="اسم اللاعب" />
+  <button onclick="addPlayer()">أضف لاعب</button>
+  <div id="playersContainer"></div>
+  <button id="startBtn" onclick="startGame()">ابدأ اللعبة</button>
+</div>
+
+<div id="nameSelector" style="display:none;">
+  <h2>اختر اسمك:</h2>
+  <div id="nameOptions"></div>
+</div>
+
+<div id="gameArea" style="display:none;">
+  <div id="roleInfo"></div>
+  <div id="animalName"></div>
+  <button onclick="askRandom()" class="btn">اسأل</button>
+  <button onclick="startVoting()" class="btn">تصويت</button>
+  <div id="voteSection"></div>
+  <div id="guessSection" style="display:none;">
+    <h3>خمن الحيوان الصحيح</h3>
+    <div id="guessButtons"></div>
+    <div id="guessResult"></div>
+  </div>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "SENDER_ID",
+    appId: "APP_ID"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const isHost = !location.hash; 
+  let playerName = "";
+  let players = [];
+  let secretAnimal = "";
+  let liar = "";
+  const animals = ["أسد", "نمر", "فيل", "زرافة", "دب", "ثعلب", "ذئب", "سلحفاة", "تمساح", "غوريلا", "بطريق", "كنغر", "حصان", "زنبور", "صقر", "بطة", "قرش", "ثعبان", "طاووس", "فهد", "غزال", "كوالا", "نعامة", "حمامة", "نملة", "ضفدع", "ضبع", "ببغاء"];
+
+  const gameRef = db.ref("game");
+
+  function addPlayer() {
+    const name = document.getElementById("playerNameInput").value.trim();
+    if (!name) return alert("اكتب اسم اللاعب");
+    db.ref("game/players/" + name).set({name: name, role: "pending"});
+    document.getElementById("playerNameInput").value = "";
+  }
+
+  function renderPlayers(snapshot) {
+    players = [];
+    document.getElementById("playersContainer").innerHTML = "";
+    snapshot.forEach(child => {
+      const p = child.val();
+      players.push(p);
+      const div = document.createElement("div");
+      div.textContent = p.name;
+      document.getElementById("playersContainer").appendChild(div);
+    });
+    document.getElementById("startBtn").disabled = players.length < 3;
+    document.getElementById("playerCount").textContent = "المتصلين: " + players.length;
+    if (!isHost && !playerName) showNameSelector();
+  }
+
+  function startGame() {
+    secretAnimal = animals[Math.floor(Math.random() * animals.length)];
+    liar = players[Math.floor(Math.random() * players.length)].name;
+    players.forEach(p => {
+      db.ref("game/players/" + p.name + "/role").set(p.name === liar ? "برا السالفة" : "جوا السالفة");
+    });
+    db.ref("game/secretAnimal").set(secretAnimal);
+    db.ref("game/started").set(true);
+  }
+
+  function showNameSelector() {
+    document.getElementById("playersList").style.display = "none";
+    document.getElementById("nameSelector").style.display = "block";
+    const container = document.getElementById("nameOptions");
+    container.innerHTML = "";
+    players.forEach(p => {
+      const btn = document.createElement("button");
+      btn.textContent = p.name;
+      btn.className = "btn";
+      btn.onclick = () => selectName(p.name);
+      container.appendChild(btn);
+    });
+  }
+
+  function selectName(name) {
+    playerName = name;
+    document.getElementById("nameSelector").style.display = "none";
+    document.getElementById("gameArea").style.display = "block";
+    gameRef.child("players/" + playerName + "/role").on("value", snap => {
+      const role = snap.val();
+      document.getElementById("roleInfo").textContent = "دورك: " + role;
+      db.ref("game/secretAnimal").once("value", s => {
+        document.getElementById("animalName").textContent = (role === "جوا السالفة") ? "الحيوان: " + s.val() : "🐾 ???";
+      });
+    });
+  }
+
+  function askRandom() {
+    if (!playerName) return;
+    const others = players.filter(p => p.name !== playerName);
+    const target = others[Math.floor(Math.random() * others.length)];
+    alert(`${playerName} يسأل ${target.name}`);
+  }
+
+  function startVoting() {
+    const container = document.getElementById("voteSection");
+    container.innerHTML = "<h3>صوت على من تظنه برا السالفة:</h3>";
+    players.forEach(p => {
+      if (p.name !== playerName) {
+        const btn = document.createElement("button");
+        btn.textContent = p.name;
+        btn.className = "btn";
+        btn.onclick = () => db.ref("game/votes/" + playerName).set(p.name);
+        container.appendChild(btn);
+      }
+    });
+  }
+
+  db.ref("game/votes").on("value", snap => {
+    const votes = snap.val() || {};
+    if (Object.keys(votes).length === players.length) finishVoting(votes);
+  });
+
+  function finishVoting(votes) {
+    const counts = {};
+    Object.values(votes).forEach(name => {
+      counts[name] = (counts[name] || 0) + 1;
+    });
+    const out = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+    alert("اللاعب الذي تم التصويت عليه: " + out);
+    if (playerName === out) showGuessSection();
+  }
+
+  function showGuessSection() {
+    document.getElementById("guessSection").style.display = "block";
+    const guessButtons = document.getElementById("guessButtons");
+    guessButtons.innerHTML = "";
+    const options = new Set([secretAnimal]);
+    while (options.size < 10) options.add(animals[Math.floor(Math.random() * animals.length)]);
+    Array.from(options).sort(() => Math.random() - 0.5).forEach(animal => {
+      const btn = document.createElement("button");
+      btn.textContent = animal;
+      btn.className = "btn";
+      btn.onclick = () => makeGuess(animal);
+      guessButtons.appendChild(btn);
+    });
+  }
+
+  function makeGuess(guess) {
+    document.getElementById("guessResult").textContent = (guess === secretAnimal) ? "🎉 صحيح!" : "❌ خطأ! الحيوان كان: " + secretAnimal;
+  }
+
+  gameRef.child("players").on("value", renderPlayers);
+</script>
+</body>
+</html>
